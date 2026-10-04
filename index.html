@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard | Availability</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f1f5f9; color: #334155; max-width: 800px; margin: 40px auto; padding: 20px; }
+        
+        /* Header & Metrics */
+        .dashboard-header { margin-bottom: 30px; }
+        h1 { margin: 0 0 20px 0; font-size: 28px; color: #0f172a; }
+        
+        .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 25px; }
+        .metric-card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; }
+        .metric-card h4 { margin: 0; color: #64748b; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .metric-card .number { font-size: 32px; font-weight: bold; color: #0f172a; margin-top: 10px; }
+        .number.green { color: #22c55e; }
+
+        /* Controls */
+        .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .btn { padding: 10px 18px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 14px;}
+        .btn-filter { background: #e2e8f0; color: #475569; }
+        .btn-filter:hover { background: #cbd5e1; }
+        .btn-filter.active { background: #22c55e; color: white; }
+
+        /* List Styles */
+        .team-list { display: flex; flex-direction: column; gap: 15px; margin-bottom: 30px; }
+        .team-card { display: flex; justify-content: space-between; align-items: center; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 5px solid transparent; transition: all 0.3s ease; }
+        
+        .card-available { border-left-color: #22c55e; }
+        .card-unavailable { border-left-color: #94a3b8; opacity: 0.8; }
+        
+        .user-info { flex-grow: 1; }
+        .user-info h3 { margin: 0 0 5px 0; font-size: 18px; color: #0f172a; }
+        .user-info p { margin: 0; font-size: 14px; color: #64748b; }
+        
+        /* Card Actions */
+        .action-group { display: flex; align-items: center; gap: 20px; }
+        .status-text { font-weight: 600; font-size: 14px; width: 70px; text-align: right; }
+        .text-available { color: #22c55e; }
+        .text-unavailable { color: #94a3b8; }
+
+        /* Toggle Switch */
+        .switch { position: relative; display: inline-block; width: 44px; height: 22px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .4s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #22c55e; }
+        input:checked + .slider:before { transform: translateX(22px); }
+
+        .btn-delete { background: transparent; color: #ef4444; border: 1px solid #fee2e2; padding: 6px 12px; border-radius: 6px; font-size: 12px; }
+        .btn-delete:hover { background: #ef4444; color: white; border-color: #ef4444;}
+
+        /* Add Form Styles */
+        .add-form-card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .add-form-card h3 { margin-top: 0; margin-bottom: 15px; color: #0f172a; }
+        .form-group { display: flex; gap: 10px; }
+        input[type="text"] { flex-grow: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: inherit; }
+        .btn-submit { background: #0f172a; color: white; }
+        .btn-submit:hover { background: #334155; }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-header">
+        <h1>Admin Dashboard</h1>
+        
+        <!-- Metrics Panel -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <h4>Total Team</h4>
+                <div class="number" id="statTotal">0</div>
+            </div>
+            <div class="metric-card">
+                <h4>Available</h4>
+                <div class="number green" id="statAvailable">0</div>
+            </div>
+            <div class="metric-card">
+                <h4>Offline</h4>
+                <div class="number" id="statOffline">0</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="controls">
+        <h3 style="margin:0;">Employee Roster</h3>
+        <button id="filterBtn" class="btn btn-filter" onclick="toggleFilter()">Filter: All</button>
+    </div>
+    
+    <div id="teamContainer" class="team-list"></div>
+
+    <div class="add-form-card">
+        <h3>+ Register New Employee</h3>
+        <form id="addTeamForm" class="form-group">
+            <input type="text" id="newName" placeholder="Full Name" required>
+            <input type="text" id="newRole" placeholder="Role / Department" required>
+            <button type="submit" class="btn btn-submit">Add to Roster</button>
+        </form>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000/api';
+        
+        let teamData = [];
+        let showOnlyAvailable = false;
+
+        async function loadTeam() {
+            try {
+                const res = await fetch(`${API_URL}/team`);
+                teamData = await res.json();
+                updateMetrics();
+                renderTeam();
+            } catch (error) {
+                console.error('Failed to load team:', error);
+            }
+        }
+
+        function updateMetrics() {
+            const total = teamData.length;
+            const available = teamData.filter(m => m.isAvailable === 1).length;
+            const offline = total - available;
+
+            document.getElementById('statTotal').textContent = total;
+            document.getElementById('statAvailable').textContent = available;
+            document.getElementById('statOffline').textContent = offline;
+        }
+
+        function renderTeam() {
+            const container = document.getElementById('teamContainer');
+            const displayedTeam = showOnlyAvailable 
+                ? teamData.filter(member => member.isAvailable === 1) 
+                : teamData;
+
+            if (displayedTeam.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #94a3b8; padding: 20px;">No members found.</p>';
+                return;
+            }
+
+            container.innerHTML = displayedTeam.map(member => {
+                const isAvail = member.isAvailable === 1;
+                const cardClass = isAvail ? 'card-available' : 'card-unavailable';
+                const textClass = isAvail ? 'text-available' : 'text-unavailable';
+                const statusText = isAvail ? 'Available' : 'Offline';
+                const checkedAttr = isAvail ? 'checked' : '';
+
+                return `
+                    <div class="team-card ${cardClass}">
+                        <div class="user-info">
+                            <h3>${member.name}</h3>
+                            <p>${member.role}</p>
+                        </div>
+                        <div class="action-group">
+                            <span class="status-text ${textClass}">${statusText}</span>
+                            <label class="switch">
+                                <input type="checkbox" onchange="toggleStatus(${member.id}, this.checked)" ${checkedAttr}>
+                                <span class="slider"></span>
+                            </label>
+                            <button class="btn btn-delete" onclick="deleteMember(${member.id})">Remove</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleFilter() {
+            showOnlyAvailable = !showOnlyAvailable;
+            const btn = document.getElementById('filterBtn');
+            
+            if (showOnlyAvailable) {
+                btn.textContent = 'Filter: Available Only';
+                btn.classList.add('active');
+            } else {
+                btn.textContent = 'Filter: All';
+                btn.classList.remove('active');
+            }
+            renderTeam();
+        }
+
+        async function toggleStatus(id, isCurrentlyChecked) {
+            try {
+                const res = await fetch(`${API_URL}/team/${id}/toggle`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ isAvailable: isCurrentlyChecked })
+                });
+
+                if (res.ok) {
+                    const index = teamData.findIndex(m => m.id === id);
+                    if (index !== -1) {
+                        teamData[index].isAvailable = isCurrentlyChecked ? 1 : 0;
+                        updateMetrics();
+                        renderTeam();
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to update status:', error);
+                loadTeam(); 
+            }
+        }
+
+        // NEW: Delete Member Logic
+        async function deleteMember(id) {
+            if (!confirm("Are you sure you want to remove this employee from the system?")) return;
+
+            try {
+                const res = await fetch(`${API_URL}/team/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (res.ok) {
+                    // Remove from local array and re-render without hitting API again
+                    teamData = teamData.filter(m => m.id !== id);
+                    updateMetrics();
+                    renderTeam();
+                } else {
+                    alert('Failed to delete member.');
+                }
+            } catch (error) {
+                console.error('Error deleting member:', error);
+            }
+        }
+
+        document.getElementById('addTeamForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const nameInput = document.getElementById('newName');
+            const roleInput = document.getElementById('newRole');
+
+            try {
+                const res = await fetch(`${API_URL}/team`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: nameInput.value, role: roleInput.value })
+                });
+
+                if (res.ok) {
+                    nameInput.value = '';
+                    roleInput.value = '';
+                    loadTeam(); 
+                }
+            } catch (error) {
+                console.error('Error adding team member:', error);
+            }
+        });
+
+        loadTeam();
+    </script>
+</body>
+</html>
